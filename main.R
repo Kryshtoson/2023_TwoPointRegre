@@ -33,7 +33,10 @@ spe_init <- read_xlsx(r'(D:\Dropbox\PC (4)\Documents\R-project\2023\2023_OakBeec
 spe_oak <- spe_init %>% filter(dataset == 'Oakwood') %>% select(-dataset) %>% rename('site' = plot) %>% relocate(year)
 spe_beech <- spe_init %>% filter(dataset == 'Beechwood') %>% select(-dataset) %>% rename('site' = plot) %>% relocate(year)
 
-getwhatweneed <- function(spe, dataset){
+getwhatweneed <- function(spe, dataset, pa = F){
+  if(pa == T){
+    spex <- spe[-c(1:2)]
+    spe[-c(1:2)] <- (spex != 0)}
   mx <- as_tibble(as.matrix(vegdist(spe[-c(1:2)])))
   names(mx) <- paste0(spe$year, '-', spe$site)
   mx[lower.tri(mx)] <- NA
@@ -48,23 +51,76 @@ getwhatweneed <- function(spe, dataset){
 map2(list(spe_oak, spe_beech, spe_jirka), list('Oakwood', 'Beechwood', 'Dry grassland'), ~getwhatweneed(.x, .y)) %>%
   bind_rows() -> tocomp
 
-tocomp %>%
+map2(list(spe_oak, spe_beech, spe_jirka), list('Oakwood', 'Beechwood', 'Dry grassland'), ~getwhatweneed(.x, .y, pa = T)) %>%
+  bind_rows() -> tocomp_pa
+
+tocomp_pa %>%
   group_by(dataset) %>%
+  filter(year > 1995 & year2 > 1995) %>%
   filter(year == min(year)) %>%
+  #filter(year2 != min(year)) %>%
   group_by(year2, dataset) %>%
   summarise(value = mean(value)) %>%
   ggplot(aes(as.numeric(year2), value)) +
   geom_line(aes(group = dataset, colour = dataset)) +
   theme_bw() +
-  scale_x_continuous(breaks = 1993:2021, expand = c(0,0,.01,0)) +
+  scale_x_continuous(breaks = 1996:2021, expand = c(0,0,0.01,0)) +
   scale_y_continuous(expand = c(0, 0, .1, 0)) +
   scale_colour_discrete(name = 'Dataset', breaks = c('Dry grassland', 'Oakwood', 'Beechwood')) +
   labs(y = 'Bray Curtis dissimilarity',
-       x = 'Year') +
+       x = 'Year',
+  caption = 'Average difference from the initial year (1993)') +
   theme(panel.grid.minor = element_blank(),
         legend.position = c(1,0),
-  legend.justification = c(1,0),
+        axis.title.x = element_blank(),
+        legend.justification = c(1,0),
         legend.background = element_blank())
 
 ggsave('Permanent_plots_change-in-time.png', height = 6, width = 10)
 
+
+######################################################################################
+# spp richness
+
+getwhatweneed2 <- function(spe, dataset){
+  spe[1:2] %>%
+  mutate(spe_rich = rowSums(spe[-c(1:2)] != 0)) %>%
+  filter(year > 1995)-> df
+  df %>%
+    left_join(df %>%
+                filter(year == 1996) %>%
+                select(site, spe_rich_ini = spe_rich)) %>%
+    mutate(diff = spe_rich - spe_rich_ini) %>%
+    group_by(year)%>%
+    summarise(diff = mean(diff)) %>%
+    mutate(dataset = dataset,
+           year = as.numeric(year))
+}
+
+map2(list(spe_oak, spe_beech, spe_jirka), list('Oakwood', 'Beechwood', 'Dry grassland'), ~getwhatweneed2(.x, .y)) %>%
+  bind_rows() -> tocomp_richness
+
+getconfi <- function(type){
+  x <- tocomp_richness$diff[tocomp_richness$dataset == type]
+  t.test(x - mean(x))$conf.int[2] }
+
+
+confis <- tibble(
+  dataset = c('Dry grassland', 'Oakwood', 'Beechwood'),
+  confi = c(getconfi('Dry grassland'), getconfi('Oakwood'), getconfi('Beechwood')))
+
+tocomp_richness %>%
+  ggplot(aes(year, diff, colour = dataset)) +
+  geom_line(aes(group = dataset)) +
+  labs(y = 'Species Richness', caption = 'Lines indicate confidence intervals.') +
+  geom_hline(data = confis, aes(yintercept = confi, colour = dataset), linetype = 2, alpha = .5) +
+  geom_hline(data = confis, aes(yintercept = -confi, colour = dataset), linetype = 2, alpha = .5) +
+  scale_colour_discrete(name = 'Dataset', breaks = c('Dry grassland', 'Oakwood', 'Beechwood')) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        legend.position = c(1,0),
+        axis.title.x = element_blank(),
+        legend.justification = c(1,0),
+        legend.background = element_blank())
+
+ggsave('Permanent_plots_richness_change-in-time.png', height = 6, width = 10)
