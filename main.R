@@ -123,4 +123,5 @@ tocomp_richness %>%
         legend.justification = c(1,0),
         legend.background = element_blank())
 
-ggsave('Permanent_plots_richness_change-in-time.png', height = 6, width = 10)
+
+ggsave('Permanent_plots_richness_change.png', height = 6, width = 10)
